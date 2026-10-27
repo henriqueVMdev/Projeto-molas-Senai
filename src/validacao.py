@@ -51,6 +51,11 @@ def checar(dados, geometria, ensaio, densidade, desvio_massa=0.35):
         if not pontos["alongamento_mm"].is_monotonic_increasing or pontos["alongamento_mm"].duplicated().any():
             avisar(id_mola, "ensaio", "alongamento não cresce com a carga: provável erro de digitação")
 
+    # Se L é o passo, os n passos cabem no comprimento total C
+    for id_mola, linha in geometria[geometria["n"] * geometria["L"] > geometria["C"]].iterrows():
+        avisar(id_mola, "geometria", f"n·L = {linha['n'] * linha['L']:.1f} > C = {linha['C']:.1f}: "
+                                     "L não pode ser o passo (conferir o que foi medido)")
+
     # Consistência entre abas
     ids_molas = set(molas["id"])
     for aba in ("dimensoes", "ensaio", "falha"):

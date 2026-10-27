@@ -43,12 +43,17 @@ def pareto(candidatas, coluna_fmax):
     return ordenadas[ordenadas[coluna_fmax] > melhor_anterior]
 
 
-def escolher(fronteira, coluna_fmax, criterio, teto_massa, alfa):
+def pontuacao(fmax, massa, criterio, teto_massa, alfa):
+    """Valor que o critério maximiza (maior = melhor; −inf = acima do teto de massa)."""
     if criterio == "teto_massa":
-        dentro_do_teto = fronteira[fronteira["massa_g"] <= teto_massa]
-        return dentro_do_teto.loc[dentro_do_teto[coluna_fmax].idxmax()] if len(dentro_do_teto) else None
-    expoente = 1 if criterio == "fmax_por_massa" else alfa
-    return fronteira.loc[(fronteira[coluna_fmax] ** expoente / fronteira["massa_g"]).idxmax()]
+        return np.where(massa <= teto_massa, fmax, -np.inf)
+    return fmax ** (1 if criterio == "fmax_por_massa" else alfa) / massa
+
+
+def escolher(fronteira, coluna_fmax, criterio, teto_massa, alfa):
+    nota = pd.Series(pontuacao(fronteira[coluna_fmax], fronteira["massa_g"], criterio, teto_massa, alfa),
+                     index=fronteira.index)
+    return None if np.isneginf(nota.max()) else fronteira.loc[nota.idxmax()]
 
 
 def avisos_borda(mola, limites):

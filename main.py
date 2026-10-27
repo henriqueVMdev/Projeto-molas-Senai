@@ -1,4 +1,6 @@
 """Pipeline ponta a ponta: dados brutos → processamento → mola ótima + gráficos."""
+import webbrowser
+
 import pandas as pd
 
 import config
@@ -83,6 +85,12 @@ def main():
     expoentes = relevancia.tabela_expoentes(modelos_ajustados, variaveis_correlacionadas)
     print(expoentes.to_string(index=False))
 
+    secao("Correlação das dimensões com K, Fmax e massa (Pearson em log; Spearman como checagem)")
+    correlacao_saidas = relevancia.correlacao_saidas(ensaiadas)
+    print(correlacao_saidas.to_string(index=False))
+    print("  Correlação simples ≠ efeito: com t e Ltot andando juntos no lote, o r de um carrega o efeito do "
+          "outro. Quem separa os efeitos são os expoentes acima.")
+
     secao("Relevância: contribuição na variação observada no lote (% por grandeza)")
     contribuicao = relevancia.contribuicao(modelos_usados, ensaiadas)
     print(contribuicao.to_string())
@@ -92,7 +100,7 @@ def main():
     print(tornado.to_string(index=False))
 
     id_referencia, referencia, efeito_k_fixo = relevancia.efeito_k_fixo(modelos_usados, ensaiadas, config.K_ALVO)
-    secao(f"Relevância: efeito com K fixo = {config.K_ALVO} kgf/mm, t recalculado "
+    secao(f"Relevância: efeito com K fixo = {config.K_ALVO_TEXTO}, t recalculado "
           f"(referência: geometria da mola {id_referencia}, t = {referencia['t'].iat[0]:.2f} mm)")
     print(efeito_k_fixo.to_string(index=False))
 
@@ -115,7 +123,7 @@ def main():
     modelos_fmax = {"teorica": modelos_ajustados[("Fmax", "teorica")], "livre": modelos_ajustados[("Fmax", "livre")]}
     candidatas = otimizacao.grade(ensaiadas, modelos_usados["K"], modelos_fmax, modelos_usados["massa_g"],
                                   config.K_ALVO)
-    secao(f"Molas candidatas com K = {config.K_ALVO} kgf/mm (t resolvido; fora da faixa de t descartadas)")
+    secao(f"Molas candidatas com K = {config.K_ALVO_TEXTO} (t resolvido; fora da faixa de t descartadas)")
     print(f"  {len(candidatas)} candidatas na grade")
     if candidatas.empty:
         print("  NENHUMA candidata: o K alvo não é atingível dentro da faixa testada. "
@@ -165,6 +173,21 @@ def main():
               f"tolerância ({100 * config.TOLERANCIA_K:.0f}%): a mola impressa pode sair fora do alvo.")
     for aviso in otimizacao.avisos_borda(mola_final, limites):
         print(f"  AVISO: {aviso}")
+    if config.K_ALVO_PROVISORIO:
+        print(f"  AVISO: K alvo PROVISÓRIO ({config.K_ALVO_PROVISORIO}). A mola projetada muda quando o professor "
+              "informar o valor oficial.")
+
+    # Sanidade: a projeção só vale a pena se o modelo não perder para uma mola já ensaiada perto do alvo
+    nota_projetada = otimizacao.pontuacao(previsao["Fmax"], previsao["massa_g"], config.CRITERIO,
+                                          config.TETO_MASSA_G, config.ALFA)
+    perto_do_alvo = ensaiadas[(ensaiadas["K"] / config.K_ALVO - 1).abs() <= config.TOLERANCIA_K]
+    for id_mola, mola in perto_do_alvo.iterrows():
+        nota = otimizacao.pontuacao(mola["fmax"], mola["massa_g"], config.CRITERIO, config.TETO_MASSA_G, config.ALFA)
+        if nota > nota_projetada:
+            print(f"  ATENÇÃO: a mola {id_mola} ensaiada (K = {mola['K']:.4f}, Fmax medido = {mola['fmax']:.3g} kgf, "
+                  f"m = {mola['massa_g']:.3g} g) supera a projetada no critério {config.CRITERIO} "
+                  f"({float(nota):.3g} × {float(nota_projetada):.3g}). O modelo de Fmax {versao_final} prevê "
+                  f"{modelos_usados['Fmax']['prever'](ensaiadas.loc[[id_mola]])[0]:.3g} kgf para ela.")
 
     outra_versao = "livre" if versao_final == "teorica" else "teorica"
     alternativa = escolhas[(escolhas["modelo_fmax"] == outra_versao) & (escolhas["criterio"] == config.CRITERIO)]
@@ -177,8 +200,11 @@ def main():
     # --- Gráficos ---
     graficos.salvar_todos(saida, dados, tabela_geometria, dimensoes, tabela_ensaio, ensaiadas, modelos_ajustados,
                           modelos_usados, matriz_correlacao, tornado, efeito_k_fixo, candidatas, fronteiras,
-                          escolhas, mola_final, config)
-    print(f"\nGráficos e tabelas salvos em {saida}/")
+                          escolhas, mola_final, correlacao_saidas, config)
+    pagina = graficos.pagina(saida, mola_final, len(ensaiadas), config)
+    print(f"\nGráficos e tabelas salvos em {saida}/ (visualização: {pagina.name})")
+    if config.ABRIR_GRAFICOS:
+        webbrowser.open(pagina.resolve().as_uri())
 
     # --- Arquivos ---
     candidatas.to_csv(saida / "candidatas.csv", index=False)
@@ -188,6 +214,7 @@ def main():
     avisos.to_csv(saida / "avisos.csv", index=False)
     resumo_modelos.to_csv(saida / "modelos.csv", index=False)
     expoentes.to_csv(saida / "relevancia_expoentes.csv", index=False)
+    correlacao_saidas.to_csv(saida / "correlacao_dimensoes.csv", index=False)
     contribuicao.to_csv(saida / "relevancia_contribuicao.csv")
     tornado.to_csv(saida / "relevancia_tornado.csv", index=False)
     efeito_k_fixo.to_csv(saida / "relevancia_k_fixo.csv", index=False)

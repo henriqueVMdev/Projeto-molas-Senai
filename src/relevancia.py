@@ -6,11 +6,14 @@ calculada numericamente com scipy.differentiate.derivative.
 """
 import numpy as np
 import pandas as pd
+from scipy import stats
 from scipy.differentiate import derivative
 
 from src.modelos import resolver_t
 
 VARIAVEIS = ("t", "h", "n", "Ltot")
+DIMENSOES = ("t", "h_ef", "h_crit", "n", "Ltot", "L", "C")
+SAIDAS = {"K": "K", "fmax": "Fmax", "massa_g": "massa"}  # coluna em `ensaiadas` → nome exibido
 COLUNAS_H = ("h_ef", "h_crit", "h_mu")  # "h" escala as três juntas (mesmo perfil de espessura)
 COLUNAS_GEOMETRIA = ["t", *COLUNAS_H, "n", "Ltot"]
 
@@ -53,6 +56,23 @@ def tabela_expoentes(modelos, correlacionadas=()):
                 situacao = "ok"
             linhas.append(dict(grandeza=alvo, versao=versao, variavel=nome, expoente=expoente,
                                erro_padrao=erro, situacao=situacao))
+    return pd.DataFrame(linhas)
+
+
+def correlacao_saidas(ensaiadas):
+    """Correlação de cada dimensão com K, Fmax e massa no lote ensaiado.
+    Pearson em log (lei de potência vira reta) com p-valor; Spearman (postos) como checagem
+    contra uma mola extrema dominar o r. `inclinacao` = elasticidade aparente (regressão simples em log).
+    Correlação simples NÃO separa variáveis que andam juntas no lote (t × Ltot): isso é papel dos expoentes."""
+    linhas = []
+    for dimensao in DIMENSOES:
+        for coluna, grandeza in SAIDAS.items():
+            par = ensaiadas[[dimensao, coluna]].dropna()
+            x, y = np.log(par[dimensao]), np.log(par[coluna])
+            regressao = stats.linregress(x, y)
+            linhas.append(dict(dimensao=dimensao, grandeza=grandeza, r=regressao.rvalue, p_valor=regressao.pvalue,
+                               rho_spearman=stats.spearmanr(x, y).statistic, inclinacao=regressao.slope,
+                               amostras=len(par)))
     return pd.DataFrame(linhas)
 
 
@@ -107,4 +127,9 @@ if __name__ == "__main__":
     modelo = dict(prever=lambda mola: np.asarray(2 * mola["t"] * mola["h_ef"] ** 3, float))
     mola = pd.DataFrame(dict(t=[5.0], h_ef=[2.0], h_crit=[1.9], h_mu=[2.1], n=[4.0], Ltot=[40.0]))
     assert np.isclose(elasticidade(modelo, mola, "h"), 3) and np.isclose(elasticidade(modelo, mola, "n"), 0)
+    lote = pd.DataFrame({nome: [1.0, 2.0, 3.0, 4.0] for nome in DIMENSOES}) * [1, 1.1, 0.9, 1, 1.2, 1, 1]
+    lote = lote.assign(K=2 * lote["h_ef"] ** 3, fmax=5 / lote["Ltot"], massa_g=[3.0, 1.0, 4.0, 2.0])
+    tabela = correlacao_saidas(lote).set_index(["dimensao", "grandeza"])
+    assert np.isclose(tabela.at[("h_ef", "K"), "r"], 1) and np.isclose(tabela.at[("h_ef", "K"), "inclinacao"], 3)
+    assert np.isclose(tabela.at[("Ltot", "Fmax"), "inclinacao"], -1)
     print("relevancia ok")

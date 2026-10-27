@@ -7,14 +7,14 @@ Contexto completo e decisões: `AGENTS.md`.
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python main.py
 ```
 
 Parâmetros (K alvo, critério, exclusões manuais etc.): `config.py`.
 Dados de entrada: `data/molas_dados_brutos.xlsx` (só dados brutos, sem fórmulas).
-Saída: tabelas no terminal + gráficos PNG e CSVs em `saidas/`.
+Saída: tabelas no terminal + gráficos PNG e CSVs em `saidas/`. Ao terminar, abre `saidas/graficos.html` no navegador com todos os gráficos (desligar em `config.ABRIR_GRAFICOS`).
 
 Novas molas entram só pela planilha, sem mudar código. Mola medida e não ensaiada (`ensaiada = nao`) aparece na lista de próximas a ensaiar.
 
@@ -29,6 +29,8 @@ Novas molas entram só pela planilha, sem mudar código. Mola medida e não ensa
 | `05_tornado.png` | efeito de ±10% em cada variável |
 | `06_efeito_k_fixo.png` | o que acontece com Fmax e massa mantendo o K alvo |
 | `07_pareto.png` | **fronteira de Pareto massa × força e a mola projetada** |
+| `08_correlacao_dimensoes.png` | r (Pearson em log) e p-valor de cada dimensão com K, Fmax e massa |
+| `09_dimensoes_vs_saidas.png` | cada dimensão contra K, Fmax e massa, com a tendência e a elasticidade aparente |
 
 ## Checagens
 

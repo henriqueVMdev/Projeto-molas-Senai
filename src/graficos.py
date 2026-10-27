@@ -14,6 +14,7 @@ VERMELHO, CINZA_NEUTRO = "#e34948", "#f0efec"
 TINTA, TINTA_SECUNDARIA, TINTA_APAGADA = "#0b0b0b", "#52514e", "#898781"
 GRADE, EIXO, SUPERFICIE = "#e1e0d9", "#c3c2b7", "#fcfcfb"
 MARCADOR_MODO = {"plastificacao": "o", "fratura": "^", "nao_falhou": "s", "sem_registro": "D"}
+MAPA_DIVERGENTE = LinearSegmentedColormap.from_list("divergente", [VERMELHO, CINZA_NEUTRO, AZUL])
 
 plt.rcParams.update({
     "figure.facecolor": SUPERFICIE, "axes.facecolor": SUPERFICIE, "savefig.facecolor": SUPERFICIE,
@@ -78,7 +79,7 @@ def curvas_ensaio(pasta, dados, tabela_ensaio):
         eixo.set_ylabel("carga (kgf)")
         eixo.set_xlim(left=0)
         eixo.set_ylim(bottom=0)
-    figura.suptitle("Ensaio de tração: K pela origem com os pontos elásticos + ponto de falha")
+    figura.suptitle("Rigidez K de cada mola: reta pela origem nos pontos elásticos, até a falha")
     _salvar(figura, pasta, "01_curvas_ensaio.png", legenda=(eixos, 4))
 
 
@@ -117,7 +118,7 @@ def espessura_ao_longo(pasta, dimensoes, tabela_geometria, z_flag):
         eixo.set_xlim(0.5, max(da_mola["posicao"].max(), 2) + 0.5)
         eixo.set_xlabel("posição (a partir da ponta do ID)")
         eixo.set_ylabel("h (mm)")
-    figura.suptitle("Espessura do fio h ao longo de cada mola (normal assumida, não provada)")
+    figura.suptitle("Espessura h ao longo de cada mola: trechos finos (defeitos) mandam na rigidez e na falha")
     _salvar(figura, pasta, "02_espessura_ao_longo.png", legenda=(eixos, 6))
 
 
@@ -144,27 +145,31 @@ def previsto_vs_medido(pasta, modelos_ajustados, ensaiadas):
                               xytext=(5, 3), fontsize=8, color=TINTA_SECUNDARIA)
         limites = [min(extremos) / 1.3, max(extremos) * 1.3]
         eixo.plot(limites, limites, color=TINTA_APAGADA, linewidth=1, label="previsto = medido")
-        eixo.set_xscale("log")
-        eixo.set_yscale("log")
+        _escala_log(eixo)
         eixo.set_xlim(limites)
         eixo.set_ylim(limites)
-        for eixo_xy in (eixo.xaxis, eixo.yaxis):
-            eixo_xy.set_major_formatter(FuncFormatter(lambda valor, _: f"{valor:g}"))
-            eixo_xy.set_minor_formatter(NullFormatter())
         eixo.set_title(rotulo)
         eixo.set_xlabel("medido")
         eixo.set_ylabel("previsto")
         modos = [Line2D([], [], linestyle="", marker=MARCADOR_MODO[modo], color=TINTA_APAGADA, label=modo)
                  for modo in ensaiadas["modo"].unique()]
         eixo.legend(handles=eixo.get_legend_handles_labels()[0] + modos, fontsize=8, loc="upper left")
-    figura.suptitle("Previsto × medido, escala log (rótulo = mola com resíduo > 25%)")
+    figura.suptitle("Os modelos acertam? Previsto × medido (na diagonal = acerto; número = mola com erro > 25%)")
     _salvar(figura, pasta, "03_previsto_vs_medido.png")
 
 
+def _escala_log(eixo):
+    """Log-log com rótulos em número comum (2, 5, 10), sem notação 10ⁿ."""
+    eixo.set_xscale("log")
+    eixo.set_yscale("log")
+    for eixo_xy in (eixo.xaxis, eixo.yaxis):
+        eixo_xy.set_major_formatter(FuncFormatter(lambda valor, _: f"{valor:g}"))
+        eixo_xy.set_minor_formatter(NullFormatter())
+
+
 def correlacao(pasta, matriz):
-    mapa = LinearSegmentedColormap.from_list("divergente", [VERMELHO, CINZA_NEUTRO, AZUL])
     figura, eixo = plt.subplots(figsize=(5.2, 4.4))
-    imagem = eixo.imshow(matriz.to_numpy(), cmap=mapa, vmin=-1, vmax=1)
+    imagem = eixo.imshow(matriz.to_numpy(), cmap=MAPA_DIVERGENTE, vmin=-1, vmax=1)
     rotulos = [f"ln {nome}" for nome in matriz.columns]
     eixo.set_xticks(range(len(rotulos)), rotulos)
     eixo.set_yticks(range(len(rotulos)), rotulos)
@@ -173,7 +178,7 @@ def correlacao(pasta, matriz):
         eixo.text(j, i, f"{valor:+.2f}", ha="center", va="center", fontsize=9,
                   color="#ffffff" if abs(valor) > 0.7 else TINTA, fontweight="bold" if abs(valor) >= 0.7 else None)
     figura.colorbar(imagem, ax=eixo, label="r")
-    figura.suptitle("Correlação nas molas ensaiadas (meta |r| < 0,7)")
+    figura.suptitle("Dimensões que variaram juntas no lote\n(|r| ≥ 0,7: os efeitos delas não se separam)")
     _salvar(figura, pasta, "04_correlacao.png")
 
 
@@ -196,11 +201,11 @@ def tornado(pasta, tabela):
                                   xytext=(4 if valor > 0 else -4, 0), ha="left" if valor > 0 else "right",
                                   va="center", fontsize=8, color=TINTA_SECUNDARIA)
         eixo.margins(x=0.25)
-    figura.suptitle("Tornado: ±10% em cada variável, na mola mediana do lote")
+    figura.suptitle("Quanto K, Fmax e massa mudam com ±10% em cada dimensão (mola mediana do lote)")
     _salvar(figura, pasta, "05_tornado.png", legenda=(eixos[:1], 2))
 
 
-def efeito_k_fixo(pasta, tabela, K_alvo):
+def efeito_k_fixo(pasta, tabela, K_alvo_texto):
     """+10% em h, n, Ltot com t recalculado para manter K: o que acontece com Fmax, massa e Fmax/m."""
     aumentos = tabela[tabela["variacao_pct"] > 0].set_index("variavel")
     series = [("variacao_fmax_pct", "Fmax", AZUL), ("variacao_massa_pct", "massa", LARANJA),
@@ -217,7 +222,8 @@ def efeito_k_fixo(pasta, tabela, K_alvo):
     eixo.margins(x=0.2)
     eixo.invert_yaxis()
     eixo.set_xlabel("variação (%)")
-    eixo.set_title(f"Com K fixo = {K_alvo} kgf/mm (t recalculado): o que decide a mola ótima")
+    eixo.set_title(f"Mantendo K = {K_alvo_texto}, com t recalculado:\n"
+                   "mexer em qual dimensão dá mais força com menos massa?")
     _salvar(figura, pasta, "06_efeito_k_fixo.png", legenda=([eixo], 3))
 
 
@@ -257,18 +263,155 @@ def pareto(pasta, candidatas, fronteiras, escolhas, mola_final, ensaiadas, versa
         eixo.set_xlabel("massa prevista (g)")
         eixo.set_ylabel("Fmax previsto (kgf)")
         eixo.legend(fontsize=8, loc="lower right")
-    figura.suptitle(f"Pareto massa × força para K = {config.K_ALVO} kgf/mm "
-                    f"(critério final: {config.CRITERIO}, α = {config.ALFA:g})")
+    figura.suptitle(f"Mola projetada: a mais forte e leve com K = {config.K_ALVO_TEXTO}\n"
+                    f"(ponto cinza = mola possível; linha = as melhores; critério {config.CRITERIO})")
     _salvar(figura, pasta, "07_pareto.png")
+
+
+def correlacao_dimensoes(pasta, tabela):
+    """Mapa do r (Pearson em log) de cada dimensão com K, Fmax e massa, com o p-valor."""
+    ordem = dict(index=tabela["dimensao"].unique(), columns=tabela["grandeza"].unique())
+    r = tabela.pivot(index="dimensao", columns="grandeza", values="r").reindex(**ordem)
+    p = tabela.pivot(index="dimensao", columns="grandeza", values="p_valor").reindex(**ordem)
+    figura, eixo = plt.subplots(figsize=(5.4, 6))
+    imagem = eixo.imshow(r.to_numpy(), cmap=MAPA_DIVERGENTE, vmin=-1, vmax=1, aspect="auto")
+    eixo.set_xticks(range(len(r.columns)), [f"ln {nome}" for nome in r.columns])
+    eixo.set_yticks(range(len(r.index)), [f"ln {nome}" for nome in r.index])
+    eixo.xaxis.tick_top()
+    eixo.grid(False)
+    for (i, j), valor in np.ndenumerate(r.to_numpy()):
+        texto_p = f"p = {p.iat[i, j]:.2f}" if p.iat[i, j] >= 0.01 else "p < 0.01"
+        eixo.text(j, i, f"{valor:+.2f}\n{texto_p}", ha="center", va="center", fontsize=8.5,
+                  color="#ffffff" if abs(valor) > 0.7 else TINTA, fontweight="bold" if p.iat[i, j] < 0.05 else None)
+    figura.colorbar(imagem, ax=eixo, label="r (Pearson em log)", shrink=0.8)
+    figura.suptitle("Quais dimensões acompanham rigidez, força e massa?\n"
+                    "(r de −1 a +1; negrito = p < 0,05, significativo)", fontsize=11)
+    _salvar(figura, pasta, "08_correlacao_dimensoes.png")
+
+
+def dimensoes_vs_saidas(pasta, ensaiadas, tabela):
+    """Cada saída (linha) contra cada variável do modelo (coluna), log-log, com a tendência simples e o r.
+    h é a versão que cada modelo usa: h_ef na rigidez e na massa, h_crit na força."""
+    linhas = [("K", "K", "K (kgf/mm)", "h_ef"), ("fmax", "Fmax", "Fmax (kgf)", "h_crit"),
+              ("massa_g", "massa", "massa (g)", "h_ef")]
+    estatisticas = tabela.set_index(["dimensao", "grandeza"])
+    figura, eixos = plt.subplots(3, 4, figsize=(13, 9.6))
+    for linha_eixos, (coluna, grandeza, rotulo, coluna_h) in zip(eixos, linhas):
+        for eixo, dimensao in zip(linha_eixos, ("t", coluna_h, "n", "Ltot")):
+            dados = ensaiadas[[dimensao, coluna, "modo"]].dropna()
+            for modo, marcador in MARCADOR_MODO.items():
+                do_modo = dados[dados["modo"] == modo]
+                if len(do_modo):
+                    eixo.scatter(do_modo[dimensao], do_modo[coluna], color=AZUL, marker=marcador, s=48,
+                                 edgecolor=SUPERFICIE, linewidth=1, zorder=3, label=modo)
+            linha = estatisticas.loc[(dimensao, grandeza)]
+            x_reta = np.geomspace(dados[dimensao].min(), dados[dimensao].max(), 20)
+            centro_x, centro_y = np.log(dados[dimensao]).mean(), np.log(dados[coluna]).mean()
+            eixo.plot(x_reta, np.exp(centro_y + linha["inclinacao"] * (np.log(x_reta) - centro_x)),
+                      color=TINTA_APAGADA, linewidth=1, zorder=2, label="tendência simples (log)")
+            for id_mola, ponto in dados.iterrows():
+                eixo.annotate(str(id_mola), (ponto[dimensao], ponto[coluna]), textcoords="offset points",
+                              xytext=(4, 3), fontsize=7, color=TINTA_SECUNDARIA)
+            _escala_log(eixo)
+            # faixa estreita (< 1 década): ticks lineares, senão o eixo log fica sem número
+            eixo.xaxis.set_major_locator(MaxNLocator(4, integer=dimensao == "n"))
+            eixo.set_title(f"r ={linha['r']:+.2f} · inclinação {linha['inclinacao']:+.2f}", fontsize=9.5,
+                           fontweight="bold" if linha["p_valor"] < 0.05 else None)
+            eixo.set_xlabel(dimensao if dimensao == "n" else f"{dimensao} (mm)")
+            eixo.set_ylabel(rotulo)
+    figura.suptitle("Cada dimensão contra rigidez, força e massa, mola a mola\n"
+                    "(inclinação ≈ % de mudança no resultado para +1% na dimensão)")
+    _salvar(figura, pasta, "09_dimensoes_vs_saidas.png", legenda=(list(eixos.flat), 4))
+
+
+# arquivo: (o que o gráfico mostra, para que serve na decisão)
+SECOES = {
+    "1. Dados medidos": {
+        "01_curvas_ensaio.png": (
+            "Carga × alongamento de cada mola, com a reta da rigidez K e o ponto onde ela falhou.",
+            "Medir a rigidez e a força de falha de cada mola. São os dados que alimentam todo o resto."),
+        "02_espessura_ao_longo.png": (
+            "A espessura h medida em vários pontos de cada mola, com a média e a faixa normal (±2σ).",
+            "Achar os trechos finos (defeitos de impressão): eles deixam a mola mais mole e é onde ela rompe."),
+    },
+    "2. Correlações: o que cada dimensão faz": {
+        "08_correlacao_dimensoes.png": (
+            "Um número (r) por par dimensão × resultado: perto de +1 sobem juntos, perto de −1 um sobe e o outro "
+            "desce, perto de 0 não há relação. Negrito = relação confiável (p < 0,05).",
+            "Ver de relance quais dimensões acompanham a rigidez, a força e o peso."),
+        "09_dimensoes_vs_saidas.png": (
+            "Os pontos de cada mola por trás de cada correlação, com a linha de tendência.",
+            "Conferir se a correlação é real ou puxada por uma mola só, e ver o tamanho do efeito (inclinação)."),
+        "04_correlacao.png": (
+            "Quanto as dimensões variaram juntas nas molas ensaiadas.",
+            "Alertar quando duas dimensões andam juntas (|r| ≥ 0,7): aí não dá para saber qual das duas causou o "
+            "efeito, e a correlação simples engana."),
+    },
+    "3. Modelos e peso de cada dimensão": {
+        "03_previsto_vs_medido.png": (
+            "O que os modelos preveem contra o que foi medido, para rigidez, força e massa.",
+            "Saber se dá para confiar nos modelos: ponto na diagonal = acerto; longe = erro."),
+        "05_tornado.png": (
+            "Quanto rigidez, força e massa mudam ao aumentar ou diminuir 10% cada dimensão.",
+            "Ranquear as dimensões: barra maior = dimensão que mais pesa naquele resultado."),
+        "06_efeito_k_fixo.png": (
+            "O efeito de aumentar h, n ou Ltot em 10% ajustando t para a rigidez continuar no alvo.",
+            "Mostrar para onde mexer na geometria para ganhar força e perder peso sem sair do K alvo."),
+    },
+    "4. Resultado": {
+        "07_pareto.png": (
+            "Todas as molas possíveis com o K alvo (cinza), as melhores — mais força para cada massa — (linha) e a "
+            "mola escolhida (estrela).",
+            "A resposta do projeto: as dimensões da mola mais forte e mais leve com a rigidez pedida."),
+    },
+}
+
+
+def pagina(pasta, mola_final, n_ensaiadas, config):
+    """Uma página com todos os gráficos, na ordem da apresentação. Devolve o caminho do HTML."""
+    blocos = []
+    for secao, graficos in SECOES.items():
+        figuras = "".join(
+            f'<figure><img src="{arquivo}" alt="{mostra}"><figcaption><p><b>Mostra:</b> {mostra}</p>'
+            f'<p><b>Objetivo:</b> {objetivo}</p></figcaption></figure>'
+            for arquivo, (mostra, objetivo) in graficos.items() if (pasta / arquivo).exists())
+        blocos.append(f"<h2>{secao}</h2>{figuras}")
+    aviso = (f'<p class="aviso"><b>K alvo provisório</b> ({config.K_ALVO_PROVISORIO}). O professor ainda não '
+             "informou o valor oficial: a mola projetada muda quando ele chegar.</p>"
+             if config.K_ALVO_PROVISORIO else "")
+    resumo = (f"K alvo = {config.K_ALVO_TEXTO} · {n_ensaiadas} molas ensaiadas · critério {config.CRITERIO}<br>"
+              f"<b>Mola projetada:</b> h = {mola_final['h_ef']:.2f} mm · t = {mola_final['t']:.2f} mm · "
+              f"n = {int(mola_final['n'])} · Ltot = {mola_final['Ltot']:.2f} mm")
+    html = f"""<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Molas serpentina</title>
+<style>
+  body {{ margin: 0 auto; max-width: 1400px; padding: 24px 16px; background: {SUPERFICIE}; color: {TINTA};
+         font: 15px/1.5 system-ui, sans-serif; }}
+  h1 {{ margin: 0; font-size: 24px; }} .sub {{ color: {TINTA_SECUNDARIA}; margin: 4px 0 12px; }}
+  .aviso {{ border-left: 4px solid {LARANJA}; background: #fdf0ea; padding: 8px 12px; margin: 0 0 8px; }}
+  h2 {{ margin: 40px 0 12px; font-size: 18px; border-bottom: 1px solid {GRADE}; padding-bottom: 6px; }}
+  figure {{ margin: 0 0 32px; }} img {{ max-width: 100%; height: auto; display: block; }}
+  figcaption {{ font-size: 14px; margin-top: 6px; max-width: 900px; }}
+  figcaption p {{ margin: 2px 0; }} figcaption b {{ color: {TINTA}; }}
+</style></head><body>
+<h1>Molas serpentina</h1><p class="sub">{resumo}</p>{aviso}
+{"".join(blocos)}
+</body></html>"""
+    caminho = pasta / "graficos.html"
+    caminho.write_text(html, encoding="utf-8")
+    return caminho
 
 
 def salvar_todos(pasta, dados, tabela_geometria, dimensoes, tabela_ensaio, ensaiadas, modelos_ajustados,
                  modelos_usados, matriz_correlacao, tabela_tornado, tabela_k_fixo, candidatas, fronteiras,
-                 escolhas, mola_final, config):
+                 escolhas, mola_final, tabela_correlacao_saidas, config):
     curvas_ensaio(pasta, dados, tabela_ensaio)
     espessura_ao_longo(pasta, dimensoes, tabela_geometria, config.Z_FLAG)
     previsto_vs_medido(pasta, modelos_ajustados, ensaiadas)
     correlacao(pasta, matriz_correlacao)
     tornado(pasta, tabela_tornado)
-    efeito_k_fixo(pasta, tabela_k_fixo, config.K_ALVO)
+    efeito_k_fixo(pasta, tabela_k_fixo, config.K_ALVO_TEXTO)
     pareto(pasta, candidatas, fronteiras, escolhas, mola_final, ensaiadas, modelos_usados["Fmax"]["versao"], config)
+    correlacao_dimensoes(pasta, tabela_correlacao_saidas)
+    dimensoes_vs_saidas(pasta, ensaiadas, tabela_correlacao_saidas)
